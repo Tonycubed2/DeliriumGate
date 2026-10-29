@@ -1,0 +1,179 @@
+name: Build and upload to Nexus Mods
+
+# Manual release: Actions tab -> "Build and upload to Nexus Mods" -> Run workflow.
+# Builds DeliriumGate from main on Windows (Visual Studio 2022, the vs2022-windows preset, vcpkg) against
+# CommonLibSSE-NG 6.7.0 (alandtse/CommonLibVR tag v6.7.0, the same tree as C:\dllmaker\CommonLibSSE-NG),
+# packages SKSE\Plugins\DeliriumGate.dll + .pdb + .ini with LICENSE and THIRD_PARTY_NOTICES.txt, posts the
+# changelog and uploads the zip as a new version of the main file.
+#
+# Needs, in the "nexus" environment (Settings -> Environments -> nexus):
+#   secret   NEXUSMODS_API_KEY  - personal API key from nexusmods.com/settings/api-keys
+# File ID 8260212 and Unique Mod ID 7318624469611 are the defaults below (Files tab -> Advanced -> API).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version shown on Nexus (e.g. 1.0.8); must match CMakeLists.txt"
+        required: true
+      changelog:
+        description: "Changelog text (optional, plain text; use ' | ' to separate lines)"
+        required: false
+        default: ""
+      description:
+        description: "File description on the Files tab (optional; default: the changelog, cut to 250 characters)"
+        required: false
+        default: ""
+      file_id:
+        description: "Nexus File ID of the main file (Files tab -> Advanced -> API -> File ID)"
+        required: false
+        default: "8260212"
+      mod_id:
+        description: "Nexus Unique Mod ID (same dialog), so the changelog is attached"
+        required: false
+        default: "7318624469611"
+      display_name:
+        description: "File name shown on Nexus"
+        required: false
+        default: "DeliriumGate"
+      mod_manager:
+        description: "Allow mod manager downloads (false = manual download only)"
+        required: false
+        default: "true"
+
+permissions:
+  contents: read
+
+env:
+  COMMONLIB_REPO: alandtse/CommonLibVR
+  COMMONLIB_REF: v6.7.0
+
+jobs:
+  release:
+    runs-on: windows-2022
+    environment: nexus
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check settings
+        env:
+          HAS_KEY: ${{ secrets.NEXUSMODS_API_KEY != '' }}
+          FILE_ID: ${{ inputs.file_id }}
+          MOD_ID: ${{ inputs.mod_id }}
+        run: |
+          if [ "$HAS_KEY" != "true" ]; then echo "::error::Secret NEXUSMODS_API_KEY is missing in the nexus environment"; exit 1; fi
+          if [ -z "$FILE_ID" ]; then echo "::error::No File ID"; exit 1; fi
+          if [ -z "$MOD_ID" ]; then echo "::error::No Unique Mod ID"; exit 1; fi
+
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Check the version number matches
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          grep -q "project(DeliriumGate VERSION ${VERSION} " CMakeLists.txt || { echo "::error::CMakeLists.txt is not version ${VERSION}"; exit 1; }
+          grep -q "DeliriumGate ${VERSION} loading" src/Main.cpp || { echo "::error::src/Main.cpp does not say ${VERSION}"; exit 1; }
+
+      - name: Check out CommonLibSSE-NG
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.COMMONLIB_REPO }}
+          ref: ${{ env.COMMONLIB_REF }}
+          path: commonlib
+          submodules: recursive
+
+      # vcpkg packages are kept between runs, so only the first build compiles them all
+      - name: vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-cache
+          key: vcpkg-${{ runner.os }}-${{ env.COMMONLIB_REF }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: vcpkg-${{ runner.os }}-
+
+      - name: Build
+        env:
+          CommonLibSSEPath_NG: ${{ github.workspace }}/commonlib
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-cache
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          export VCPKG_ROOT="$VCPKG_INSTALLATION_ROOT"
+          cmake --preset vs2022-windows
+          cmake --build build --config Release
+          for f in build/Release/DeliriumGate.dll build/Release/DeliriumGate.pdb DeliriumGate.ini; do
+            if [ ! -f "$f" ]; then echo "::error::MISSING $f - not uploading"; exit 1; fi
+          done
+
+      - name: Package
+        run: |
+          mkdir -p pkg/SKSE/Plugins
+          cp build/Release/DeliriumGate.dll build/Release/DeliriumGate.pdb DeliriumGate.ini pkg/SKSE/Plugins/
+          cp LICENSE THIRD_PARTY_NOTICES.txt pkg/
+          cd pkg && 7z a -tzip -bso0 ../DeliriumGate.zip SKSE LICENSE THIRD_PARTY_NOTICES.txt && cd ..
+          7z l DeliriumGate.zip
+
+      - name: Keep the zip (Actions run -> Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeliriumGate-${{ inputs.version }}
+          path: DeliriumGate.zip
+
+      - name: Format changelog
+        id: log
+        if: ${{ inputs.changelog != '' }}
+        env:
+          TEXT: ${{ inputs.changelog }}
+        run: |
+          {
+            echo "text<<CHANGELOG_EOF"
+            printf '%s\n' "$TEXT" | sed 's/ | /\n/g'
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # The file's own description on the Files tab (Nexus keeps it short): what changed in this version.
+      - name: File description
+        id: desc
+        env:
+          TEXT: ${{ inputs.description || inputs.changelog }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          d="$(printf '%s' "$TEXT" | sed 's/ | /; /g')"
+          case "$d" in [Vv]ersion*) ;; *) d="Version $VERSION: $d" ;; esac  # no "Version x: Version x:"
+          if [ ${#d} -gt 250 ]; then d="${d:0:246}..."; fi
+          echo "text=$d" >> "$GITHUB_OUTPUT"
+
+      # The changelog is posted BEFORE the file: an entry added through the API only shows on the
+      # Changelogs tab once Nexus rebuilds the page, and the upload is what makes it rebuild.
+      - name: Post changelog
+        if: ${{ inputs.changelog != '' }}
+        env:
+          KEY: ${{ secrets.NEXUSMODS_API_KEY }}
+          MOD_ID: ${{ inputs.mod_id }}
+          VERSION: ${{ inputs.version }}
+          TEXT: ${{ steps.log.outputs.text }}
+        run: |
+          body=$(jq -n --arg v "$VERSION" --arg c "$TEXT" '{version: $v, changelog: $c}')
+          code=$(curl -sS -o resp.json -w '%{http_code}' -X POST \
+            -H "apikey: $KEY" -H "Content-Type: application/json" -H "User-Agent: DeliriumGate-release" \
+            --data "$body" "https://api.nexusmods.com/v3/mods/$MOD_ID/changelogs")
+          echo "HTTP $code"
+          cat resp.json; echo
+          if [ "$code" != "201" ]; then echo "::error::Nexus refused the changelog (HTTP $code): $(head -c 300 resp.json)"; exit 1; fi
+
+      - name: Upload to Nexus Mods
+        uses: Nexus-Mods/upload-action@main
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_id: ${{ inputs.file_id }}
+          filename: DeliriumGate.zip
+          display_name: ${{ inputs.display_name }}
+          description: ${{ steps.desc.outputs.text }}
+          version: ${{ inputs.version }}
+          mod_id: ${{ inputs.mod_id }}
+          category: main
+          allow_mod_manager_download: ${{ inputs.mod_manager }}
+          primary_mod_manager_download: false
+          update_mod_version: true
