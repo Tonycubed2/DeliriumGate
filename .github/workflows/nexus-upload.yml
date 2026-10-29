@@ -1,10 +1,9 @@
-name: Build and upload to Nexus Mods
+name: Upload to Nexus Mods
 
-# Manual release: Actions tab -> "Build and upload to Nexus Mods" -> Run workflow.
-# Builds DeliriumGate from main on Windows (Visual Studio 2022, the vs2022-windows preset, vcpkg) against
-# CommonLibSSE-NG 6.7.0 (alandtse/CommonLibVR tag v6.7.0, the same tree as C:\dllmaker\CommonLibSSE-NG),
-# packages SKSE\Plugins\DeliriumGate.dll + .pdb + .ini with LICENSE and THIRD_PARTY_NOTICES.txt, posts the
-# changelog and uploads the zip as a new version of the main file.
+# Manual release: Actions tab -> "Upload to Nexus Mods" -> Run workflow.
+# Nothing is built here: it uploads release/DeliriumGate.zip, the DLL Tony built and tested on his PC
+# (SKSE\Plugins\DeliriumGate.dll + .pdb + .ini, LICENSE, THIRD_PARTY_NOTICES.txt), pushed together with
+# the source it was built from. Posts the changelog, then uploads the zip as a new version of the main file.
 #
 # Needs, in the "nexus" environment (Settings -> Environments -> nexus):
 #   secret   NEXUSMODS_API_KEY  - personal API key from nexusmods.com/settings/api-keys
@@ -14,8 +13,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version shown on Nexus (e.g. 1.0.8); must match CMakeLists.txt"
+        description: "Version shown on Nexus (e.g. 1.08)"
         required: true
+      zip:
+        description: "Path of the zip in this repository"
+        required: false
+        default: "release/DeliriumGate.zip"
       changelog:
         description: "Changelog text (optional, plain text; use ' | ' to separate lines)"
         required: false
@@ -44,17 +47,10 @@ on:
 permissions:
   contents: read
 
-env:
-  COMMONLIB_REPO: alandtse/CommonLibVR
-  COMMONLIB_REF: v6.7.0
-
 jobs:
-  release:
-    runs-on: windows-2022
+  upload:
+    runs-on: ubuntu-24.04
     environment: nexus
-    defaults:
-      run:
-        shell: bash
     steps:
       - name: Check settings
         env:
@@ -71,55 +67,16 @@ jobs:
         with:
           ref: main
 
-      - name: Check the version number matches
+      - name: Check the zip
         env:
-          VERSION: ${{ inputs.version }}
+          ZIP: ${{ inputs.zip }}
         run: |
-          grep -q "project(DeliriumGate VERSION ${VERSION} " CMakeLists.txt || { echo "::error::CMakeLists.txt is not version ${VERSION}"; exit 1; }
-          grep -q "DeliriumGate ${VERSION} loading" src/Main.cpp || { echo "::error::src/Main.cpp does not say ${VERSION}"; exit 1; }
-
-      - name: Check out CommonLibSSE-NG
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.COMMONLIB_REPO }}
-          ref: ${{ env.COMMONLIB_REF }}
-          path: commonlib
-          submodules: recursive
-
-      # vcpkg packages are kept between runs, so only the first build compiles them all
-      - name: vcpkg cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/vcpkg-cache
-          key: vcpkg-${{ runner.os }}-${{ env.COMMONLIB_REF }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
-          restore-keys: vcpkg-${{ runner.os }}-
-
-      - name: Build
-        env:
-          CommonLibSSEPath_NG: ${{ github.workspace }}/commonlib
-          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-cache
-        run: |
-          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
-          export VCPKG_ROOT="$VCPKG_INSTALLATION_ROOT"
-          cmake --preset vs2022-windows
-          cmake --build build --config Release
-          for f in build/Release/DeliriumGate.dll build/Release/DeliriumGate.pdb DeliriumGate.ini; do
-            if [ ! -f "$f" ]; then echo "::error::MISSING $f - not uploading"; exit 1; fi
+          if [ ! -f "$ZIP" ]; then echo "::error::$ZIP is not in the repository"; exit 1; fi
+          unzip -l "$ZIP"
+          for f in SKSE/Plugins/DeliriumGate.dll SKSE/Plugins/DeliriumGate.ini; do
+            unzip -l "$ZIP" | grep -q " $f\$" || { echo "::error::$f is missing from $ZIP - not uploading"; exit 1; }
           done
-
-      - name: Package
-        run: |
-          mkdir -p pkg/SKSE/Plugins
-          cp build/Release/DeliriumGate.dll build/Release/DeliriumGate.pdb DeliriumGate.ini pkg/SKSE/Plugins/
-          cp LICENSE THIRD_PARTY_NOTICES.txt pkg/
-          cd pkg && 7z a -tzip -bso0 ../DeliriumGate.zip SKSE LICENSE THIRD_PARTY_NOTICES.txt && cd ..
-          7z l DeliriumGate.zip
-
-      - name: Keep the zip (Actions run -> Artifacts)
-        uses: actions/upload-artifact@v4
-        with:
-          name: DeliriumGate-${{ inputs.version }}
-          path: DeliriumGate.zip
+          cp "$ZIP" DeliriumGate.zip
 
       - name: Format changelog
         id: log
