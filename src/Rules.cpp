@@ -24,6 +24,7 @@ namespace Rules
 		constexpr const char* kNotVanilla = "DeliriumGate: ragdoll not caused by a vanilla hit";
 		constexpr const char* kDismember = "DeliriumGate: Dismembering Framework may dismember this death";
 		constexpr const char* kFinishing = "DeliriumGate: finishing a death Delirium left hanging";
+		constexpr const char* kFECDeath = "DeliriumGate: Frozen Electrocuted Combustion death effect";
 
 		std::thread::id g_mainThread{};
 
@@ -83,11 +84,34 @@ namespace Rules
 		RE::TESGlobal*                   g_dfWeapon[kDFWeaponCount] = {};
 		std::unordered_set<std::string> g_dfRaces;  // lowercase race editor IDs DF has limbs for
 
+		// ---- Frozen Electrocuted Combustion (filled at data loaded, read-only after) ----
+		// FEC's death effects run in its OnDying script event and read the cause of death from the
+		// victim's active effects at that moment (po3_FEC GetCauseOfDeath): hostile, detrimental effects
+		// with MagicDamageFire / Frost / Shock, an Absorb effect (drain) or PO3_MagicDamageSun.
+		// Delirium's "dying on her feet" delays the death by seconds, by then the effects are gone.
+		enum FECType : int
+		{
+			kFECFire,
+			kFECFrost,
+			kFECShock,
+			kFECDrain,
+			kFECSun,
+			kFECTypeCount
+		};
+		const RE::TESFile* g_fecFile = nullptr;
+		RE::BGSKeyword*    g_fecTypeKeywords[kFECTypeCount] = {};  // drain has none (archetype)
+		RE::BGSKeyword*    g_fecNoEffects = nullptr;                 // FEC_NoDeathEffects
+		RE::BGSKeyword*    g_kwGhost = nullptr;
+		RE::BGSKeyword*    g_kwNPC = nullptr;
+		RE::TESGlobal*     g_fecChanceNPC[kFECTypeCount] = {};
+		RE::TESGlobal*     g_fecChanceCreature[kFECTypeCount] = {};
+
 		// ---- state shared between threads ----
 		std::mutex                                       g_lock;
 		std::unordered_map<RE::FormID, double>           g_lastRealHit;     // actor -> time of last hit (not from a blocked plugin)
 		std::unordered_map<RE::FormID, double>           g_blockedUntil;    // actor -> hit from a blocked plugin keeps Delirium away until
 		std::unordered_map<RE::FormID, double>           g_yieldedDeaths;   // actor -> time the gate gave her death to the game
+		std::unordered_set<RE::FormID>                   g_keptCorpses;     // FEC deaths: the corpse stays away from Delirium for good
 		std::unordered_map<RE::FormID, bool>             g_carnageBase;     // actor base -> has a Carnage spell
 		struct Cached
 		{
@@ -121,6 +145,9 @@ namespace Rules
 			}
 			const auto now = Now();
 			std::scoped_lock lock(g_lock);
+			if (g_keptCorpses.contains(a_actor->GetFormID())) {
+				return true;  // an FEC corpse: frozen, charred, shattered... never Delirium's
+			}
 			auto it = g_yieldedDeaths.find(a_actor->GetFormID());
 			return it != g_yieldedDeaths.end() && now - it->second < kYieldedSeconds;
 		}
@@ -384,6 +411,143 @@ namespace Rules
 			return true;
 		}
 
+		// ---- Frozen Electrocuted Combustion ----
+
+		RE::TESGlobal* FindGlobal(const std::string& a_editorID, RE::FormID a_localID, const std::string& a_plugin)
+		{
+			if (auto* global = RE::TESForm::LookupByEditorID<RE::TESGlobal>(a_editorID)) {
+				return global;
+			}
+			auto* dh = RE::TESDataHandler::GetSingleton();
+			return (dh && a_localID) ? dh->LookupForm<RE::TESGlobal>(a_localID, a_plugin) : nullptr;
+		}
+
+		void LoadFEC()
+		{
+			auto* dh = RE::TESDataHandler::GetSingleton();
+			g_fecFile = dh ? dh->LookupModByName(Settings::fecPlugin) : nullptr;
+			if (!g_fecFile) {
+				logger::info("Frozen Electrocuted Combustion: {} not loaded, its rules off", Settings::fecPlugin);
+				return;
+			}
+			auto keyword = [](const char* a_edid) {
+				auto* kw = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(a_edid);
+				if (!kw) {
+					logger::info("Frozen Electrocuted Combustion: keyword {} not found", a_edid);
+				}
+				return kw;
+			};
+			g_fecTypeKeywords[kFECFire] = keyword("MagicDamageFire");
+			g_fecTypeKeywords[kFECFrost] = keyword("MagicDamageFrost");
+			g_fecTypeKeywords[kFECShock] = keyword("MagicDamageShock");
+			g_fecTypeKeywords[kFECDrain] = nullptr;  // drain = an Absorb effect
+			g_fecTypeKeywords[kFECSun] = keyword("PO3_MagicDamageSun");
+			g_fecNoEffects = keyword("FEC_NoDeathEffects");
+			g_kwGhost = keyword("ActorTypeGhost");
+			g_kwNPC = keyword("ActorTypeNPC");
+
+			// local form IDs in FEC.esp 6.1.3, used when an editor ID lookup fails
+			struct Chance
+			{
+				const char* edid;
+				RE::FormID  id;
+			};
+			constexpr Chance kNPC[kFECTypeCount] = { { "FEC_FireRandomChance", 0x808 }, { "FEC_FrostRandomChance", 0x80E },
+				{ "FEC_ShockRandomChance", 0x80F }, { "FEC_DrainRandomChance", 0x81A }, { "FEC_SunRandomChance", 0x818 } };
+			constexpr Chance kCreature[kFECTypeCount] = { { "FEC_FireRandomChanceCr", 0x91F }, { "FEC_FrostRandomChanceCr", 0x920 },
+				{ "FEC_ShockRandomChanceCr", 0x922 }, { "FEC_DrainRandomChance", 0x81A }, { "FEC_SunRandomChanceCr", 0x923 } };
+			for (int t = 0; t < kFECTypeCount; ++t) {
+				g_fecChanceNPC[t] = FindGlobal(kNPC[t].edid, kNPC[t].id, Settings::fecPlugin);
+				g_fecChanceCreature[t] = FindGlobal(kCreature[t].edid, kCreature[t].id, Settings::fecPlugin);
+			}
+			logger::info("Frozen Electrocuted Combustion: {} found; fire / frost / shock / drain / sun deaths: {}; their corpses: {}",
+				Settings::fecPlugin,
+				Settings::fecYieldDeaths ? "the game's own death (FEC gets them)" : "left to Delirium ([FEC] bYieldDeaths=0)",
+				Settings::fecKeepCorpses ? "never Delirium's" : "30 s like other yielded deaths");
+		}
+
+		// Which of FEC's death types the victim's active effects show right now (bit per FECType).
+		// The killing blow comes on a game worker thread, so this may read the list while the game
+		// changes it: it only reads, and the caller guards it against an access violation.
+		std::uint32_t ScanFECEffects(RE::Actor* a_actor)
+		{
+			using Flag = RE::EffectSetting::EffectSettingData::Flag;
+			std::uint32_t mask = 0;
+			auto*         target = a_actor->AsMagicTarget();
+			auto*         list = target ? target->GetActiveEffectList() : nullptr;
+			if (!list) {
+				return 0;
+			}
+			for (auto* effect : *list) {
+				auto* mgef = effect ? effect->GetBaseObject() : nullptr;
+				if (!mgef || !mgef->data.flags.all(Flag::kHostile) || !mgef->data.flags.all(Flag::kDetrimental)) {
+					continue;
+				}
+				if (g_fecTypeKeywords[kFECSun] && mgef->HasKeyword(g_fecTypeKeywords[kFECSun])) {
+					mask |= 1u << kFECSun;
+				} else if (g_fecTypeKeywords[kFECFire] && mgef->HasKeyword(g_fecTypeKeywords[kFECFire])) {
+					mask |= 1u << kFECFire;
+				} else if (g_fecTypeKeywords[kFECFrost] && mgef->HasKeyword(g_fecTypeKeywords[kFECFrost])) {
+					mask |= 1u << kFECFrost;
+				} else if (g_fecTypeKeywords[kFECShock] && mgef->HasKeyword(g_fecTypeKeywords[kFECShock])) {
+					mask |= 1u << kFECShock;
+				} else if (mgef->GetArchetype() == RE::EffectArchetypes::ArchetypeID::kAbsorb) {
+					mask |= 1u << kFECDrain;
+				}
+			}
+			return mask;
+		}
+
+		std::uint32_t ScanFECEffectsGuarded(RE::Actor* a_actor)
+		{
+			__try {
+				return ScanFECEffects(a_actor);
+			} __except (1 /* EXCEPTION_EXECUTE_HANDLER */) {
+				return 0;
+			}
+		}
+
+		bool HasKw(RE::Actor* a_actor, RE::BGSKeyword* a_keyword)
+		{
+			if (!a_keyword) {
+				return false;
+			}
+			auto* base = a_actor->GetActorBase();
+			auto* race = a_actor->GetRace();
+			return (base && base->HasKeyword(a_keyword)) || (race && race->HasKeyword(a_keyword));
+		}
+
+		// Would FEC show a death effect (frozen, charred, electrocuted, drained, ash) for this death?
+		bool FECMayShow(RE::Actor* a_victim)
+		{
+			if (!g_fecFile || !a_victim || a_victim == RE::PlayerCharacter::GetSingleton()) {
+				return false;
+			}
+			// who FEC gives its death effects to (its own distribution rules)
+			if (HasKw(a_victim, g_fecNoEffects) || HasKw(a_victim, g_kwGhost) || a_victim->IsGhost()) {
+				return false;
+			}
+			auto* base = a_victim->GetActorBase();
+			if (base && base->IsSummonable()) {
+				return false;
+			}
+			const bool npc = HasKw(a_victim, g_kwNPC);
+			if (auto* race = a_victim->GetRace(); npc && race && race->IsChildRace()) {
+				return false;
+			}
+			const auto mask = ScanFECEffectsGuarded(a_victim);
+			if (!mask) {
+				return false;
+			}
+			auto* const* chances = npc ? g_fecChanceNPC : g_fecChanceCreature;
+			for (int t = 0; t < kFECTypeCount; ++t) {
+				if ((mask & (1u << t)) && (!chances[t] || chances[t]->value > 0.0f)) {
+					return true;  // FEC's own dice roll decides after that
+				}
+			}
+			return false;
+		}
+
 		// Checks that read lists the game changes on the main thread (factions, active effects, graph variables).
 		const char* MainThreadChecks(RE::Actor* a_actor)
 		{
@@ -593,6 +757,7 @@ namespace Rules
 		}
 
 		LoadDF();
+		LoadFEC();
 
 		{
 			std::scoped_lock lock(g_lock);
@@ -660,13 +825,19 @@ namespace Rules
 		return CorpseReason(a_actor, kCarnageCorpse);
 	}
 
-	void NoteYieldedDeath(RE::Actor* a_victim)
+	void NoteYieldedDeath(RE::Actor* a_victim, const char* a_reason)
 	{
 		if (!a_victim) {
 			return;
 		}
 		const auto now = Now();
 		std::scoped_lock lock(g_lock);
+		if (a_reason == kFECDeath && Settings::fecKeepCorpses) {
+			if (g_keptCorpses.size() > 4096) {
+				g_keptCorpses.clear();  // old bodies are long gone; keep the set small
+			}
+			g_keptCorpses.insert(a_victim->GetFormID());
+		}
 		g_yieldedDeaths[a_victim->GetFormID()] = now;
 		if (g_yieldedDeaths.size() > 256) {
 			std::erase_if(g_yieldedDeaths, [now](const auto& kv) { return now - kv.second > kYieldedSeconds; });
@@ -711,6 +882,9 @@ namespace Rules
 		}
 		if (Settings::carnageYieldDeaths && IsCarnageActor(a_victim)) {
 			return kCarnageDeath;
+		}
+		if (Settings::fecYieldDeaths && FECMayShow(a_victim)) {
+			return kFECDeath;
 		}
 		if (Settings::dfYieldDeaths && DFMayDismember(a_victim, a_killer)) {
 			return kDismember;

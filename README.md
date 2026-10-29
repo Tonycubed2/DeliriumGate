@@ -9,8 +9,8 @@ License: GPL-3.0-or-later (see `LICENSE`). Third-party notices: `THIRD_PARTY_NOT
 ```
 Targets: Skyrim AE 1.6.1170 and 1.7.99 (Address Library, version independent).
 Requires: SKSE, Address Library for SKSE Plugins, Skyrim Delirium 1.4.4 or 1.4.5 (Nexus 196333).
-Works with: Maximum Carnage (MaximumCarnage.esp), Dismembering Framework, VioLens and vanilla
-kill moves, OStim NG.
+Works with: Maximum Carnage (MaximumCarnage.esp), Dismembering Framework, Frozen Electrocuted
+Combustion (FEC.esp), VioLens and vanilla kill moves, OStim NG.
 
 Built against CommonLibSSE-NG 6.7.0 at C:\dllmaker\CommonLibSSE-NG
 (taken from the CommonLibSSEPath_NG environment variable when it is set). Uses MinHook (vcpkg).
@@ -30,6 +30,10 @@ bumps, explosions, Skyrim's own ragdolls) and steps aside when something else ha
   Dismembering    A killing blow Dismembering Framework may dismember (by its own MCM settings:
   Framework       who, "if fatal", the killer's weapon type, races it has limbs for) is the
                   game's own death, so DF can cut. DF's dice roll still decides each time.
+  FEC             A killing blow while a fire / frost / shock / drain / sun effect is on her (FEC's
+                  own cause-of-death rules) is the game's own death, so Frozen Electrocuted
+                  Combustion can freeze, burn or electrocute her. Delirium never picks up those
+                  corpses.
   Stuck dying     An NPC Delirium keeps "dying on her feet" for more than 8 s (its own limit is
                   3 s) gets her death finished: Delirium is made to let her go, and if she is
                   still alive DeliriumGate kills her, credited to the same killer.
@@ -74,6 +78,13 @@ Install (its own MO2 mod, any priority):
   SKSE\Plugins\DeliriumGate.dll
   SKSE\Plugins\DeliriumGate.pdb
   SKSE\Plugins\DeliriumGate.ini
+
+1.0.9: [FEC] (on when FEC.esp is loaded): Frozen Electrocuted Combustion reads the cause of death
+  from the victim's magic effects when she dies; Delirium's "dying on her feet" delayed the death
+  until those effects were gone, so FEC showed nothing. A killing blow while a fire, frost, shock,
+  drain or sun effect is on her (FEC's rules: hostile + detrimental, its keywords / Absorb, its MCM
+  chances above 0, not on ghosts, children, summons or FEC_NoDeathEffects) is now the game's own
+  death, and Delirium never picks those corpses up (bKeepCorpses).
 
 1.0.8: [Dismembering] (on when Dismembering Framework.esm is loaded): a killing blow DF may
   dismember is the game's own death. Delirium's "dying on her feet" kept NPCs alive at 1 health,

@@ -164,6 +164,10 @@ namespace Settings
 		Get(ini, "dismembering.byielddeaths", dfYieldDeaths);
 		Get(ini, "dismembering.bcheckraces", dfCheckRaces);
 
+		Get(ini, "fec.splugin", fecPlugin);
+		Get(ini, "fec.byielddeaths", fecYieldDeaths);
+		Get(ini, "fec.bkeepcorpses", fecKeepCorpses);
+
 		Get(ini, "ragdoll.bvanillaonly", ragdollVanillaOnly);
 		Get(ini, "ragdoll.fhitwindow", ragdollHitWindow, 0.05f, 10.0f);
 
@@ -192,6 +196,7 @@ namespace Settings
 		logger::info("Settings: [PairedAnimations] bYield={}", pairedYield);
 		logger::info("Settings: [Carnage] sPlugin={} bYieldDeaths={} bReleaseCorpses={} bYieldAll={}", carnagePlugin, carnageYieldDeaths, carnageReleaseCorpses, carnageYieldAll);
 		logger::info("Settings: [Dismembering] sPlugin={} bYieldDeaths={} bCheckRaces={}", dfPlugin, dfYieldDeaths, dfCheckRaces);
+		logger::info("Settings: [FEC] sPlugin={} bYieldDeaths={} bKeepCorpses={}", fecPlugin, fecYieldDeaths, fecKeepCorpses);
 		logger::info("Settings: [Ragdoll] bVanillaOnly={} fHitWindow={}", ragdollVanillaOnly, ragdollHitWindow);
 		logger::info("Settings: [OtherMods] sFactions={}", Join(factions));
 		logger::info("Settings: [OtherMods] sKeywords={} sEffectKeywords={}", Join(keywords), Join(effectKeywords));

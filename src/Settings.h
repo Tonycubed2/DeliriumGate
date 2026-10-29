@@ -31,6 +31,11 @@ namespace Settings
 	inline bool        dfYieldDeaths = true;  // a killing blow DF may dismember is the game's own death (DF needs her really dead)
 	inline bool        dfCheckRaces = true;   // only races DF has limbs for (Data\SKSE\DismemberingFramework\*_DATA.json)
 
+	// [FEC] Frozen Electrocuted Combustion (po3_FEC.dll + FEC.esp)
+	inline std::string fecPlugin = "FEC.esp";
+	inline bool        fecYieldDeaths = true;   // a fire / frost / shock / drain / sun death FEC may show is the game's own death
+	inline bool        fecKeepCorpses = true;   // Delirium never picks those corpses up (frozen, charred, ash...)
+
 	// [Ragdoll]
 	inline bool  ragdollVanillaOnly = true;  // take over Skyrim's ragdoll only right after a real hit (shout, explosion, blow...)
 	inline float ragdollHitWindow = 1.0f;    // seconds after that hit

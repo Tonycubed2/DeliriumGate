@@ -129,7 +129,7 @@ namespace Core
 			if (Settings::enabled) {
 				if (const char* reason = Rules::DeathReason(a_victim, a_killer)) {
 					Rules::LogYield(a_victim, "killing blow", reason);
-					Rules::NoteYieldedDeath(a_victim);  // and Delirium may not pick up the corpse afterwards
+					Rules::NoteYieldedDeath(a_victim, reason);  // and Delirium may not pick up the corpse afterwards
 					return false;  // the game's own death goes through: Carnage / the kill move get it
 				}
 			}

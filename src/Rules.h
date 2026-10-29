@@ -23,8 +23,9 @@ namespace Rules
 	bool IsCarnageActor(RE::Actor* a_actor);
 
 	// the gate gave this killing blow to the game (kill move, Carnage, player kill): Delirium may not
-	// pick the corpse up afterwards either ("died into Skyrim's ragdoll: taking over", dying writhe)
-	void NoteYieldedDeath(RE::Actor* a_victim);
+	// pick the corpse up afterwards either ("died into Skyrim's ragdoll: taking over", dying writhe).
+	// a_reason: the reason DeathReason gave (an FEC death keeps its corpse away from Delirium for good).
+	void NoteYieldedDeath(RE::Actor* a_victim, const char* a_reason = nullptr);
 
 	void LogYield(RE::Actor* a_actor, const char* a_where, const char* a_reason);
 }
