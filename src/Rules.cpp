@@ -1,4 +1,5 @@
 #include "Rules.h"
+#include "DeathCheck.h"
 #include "Settings.h"
 
 namespace Rules
@@ -21,6 +22,8 @@ namespace Rules
 		constexpr const char* kEffect = "DeliriumGate: another mod (magic effect)";
 		constexpr const char* kSource = "DeliriumGate: hit from a blocked plugin";
 		constexpr const char* kNotVanilla = "DeliriumGate: ragdoll not caused by a vanilla hit";
+		constexpr const char* kDismember = "DeliriumGate: Dismembering Framework may dismember this death";
+		constexpr const char* kFinishing = "DeliriumGate: finishing a death Delirium left hanging";
 
 		std::thread::id g_mainThread{};
 
@@ -37,6 +40,48 @@ namespace Rules
 		std::vector<const RE::TESFile*> g_sourcePlugins;
 		const RE::TESFile*              g_carnageFile = nullptr;
 		bool                            g_dataLoaded = false;
+
+		// ---- Dismembering Framework (filled at data loaded, read-only after) ----
+		// Its MCM writes every setting into a global of its .esm; the DLL reads them on each hit.
+		enum DFWho : int
+		{
+			kDFPlayer,
+			kDFNPC,
+			kDFOther,
+			kDFWhoCount
+		};
+		enum DFWeapon : int
+		{
+			kDFHandToHand,
+			kDFOneHandSword,
+			kDFTwoHandSword,
+			kDFOneHandAxe,
+			kDFTwoHandAxe,
+			kDFOneHandMace,
+			kDFTwoHandMace,
+			kDFDagger,
+			kDFRanged,
+			kDFOtherWeapon,
+			kDFBeast,
+			kDFWeaponCount
+		};
+		constexpr const char* kDFWhoNames[kDFWhoCount] = { "Player", "NPC", "Other" };
+		constexpr const char* kDFWeaponNames[kDFWeaponCount] = { "HandToHand", "OneHandSword", "TwoHandSword", "OneHandAxe",
+			"TwoHandAxe", "OneHandMace", "TwoHandMace", "Dagger", "Ranged", "Other", "Beast" };
+		// local form IDs in Dismembering Framework.esm 1.2.3, used when an editor ID lookup fails
+		constexpr RE::FormID kDFModStatusID = 0x804;
+		constexpr RE::FormID kDFCanBeIDs[kDFWhoCount] = { 0x82D, 0x832, 0x837 };
+		constexpr RE::FormID kDFCanDoIDs[kDFWhoCount] = { 0x82E, 0x833, 0x838 };
+		constexpr RE::FormID kDFIfFatalIDs[kDFWhoCount] = { 0x82F, 0x834, 0x839 };
+		constexpr RE::FormID kDFWeaponIDs[kDFWeaponCount] = { 0x83C, 0x843, 0x84A, 0x851, 0x858, 0x85F, 0x866, 0x86D, 0x874, 0x87A, 0x890 };
+
+		const RE::TESFile*               g_dfFile = nullptr;
+		RE::TESGlobal*                   g_dfModStatus = nullptr;
+		RE::TESGlobal*                   g_dfCanBe[kDFWhoCount] = {};
+		RE::TESGlobal*                   g_dfCanDo[kDFWhoCount] = {};
+		RE::TESGlobal*                   g_dfIfFatal[kDFWhoCount] = {};
+		RE::TESGlobal*                   g_dfWeapon[kDFWeaponCount] = {};
+		std::unordered_set<std::string> g_dfRaces;  // lowercase race editor IDs DF has limbs for
 
 		// ---- state shared between threads ----
 		std::mutex                                       g_lock;
@@ -117,6 +162,226 @@ namespace Rules
 			} catch (...) {
 				return nullptr;
 			}
+		}
+
+		std::string LowerCopy(std::string_view a_text)
+		{
+			std::string out(a_text);
+			for (auto& c : out) {
+				c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			}
+			return out;
+		}
+
+		// ---- Dismembering Framework ----
+
+		RE::TESGlobal* FindDFGlobal(const std::string& a_editorID, RE::FormID a_localID)
+		{
+			if (auto* global = RE::TESForm::LookupByEditorID<RE::TESGlobal>(a_editorID)) {
+				return global;
+			}
+			auto* dh = RE::TESDataHandler::GetSingleton();
+			return dh ? dh->LookupForm<RE::TESGlobal>(a_localID, Settings::dfPlugin) : nullptr;
+		}
+
+		// a missing global (another DF version) does not block: DF decides itself
+		bool DFOn(const RE::TESGlobal* a_global)
+		{
+			return !a_global || a_global->value != 0.0f;
+		}
+
+		// The top-level keys of a DF *_DATA.json: race editor IDs, several joined by '|'.
+		void ReadDFRaceKeys(const std::filesystem::path& a_file, std::unordered_set<std::string>& a_out)
+		{
+			std::ifstream in(a_file, std::ios::binary);
+			if (!in) {
+				return;
+			}
+			const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+			int  depth = 0;
+			bool inString = false;
+			bool escape = false;
+			std::string current;
+			std::string lastDepth1String;
+			bool        haveDepth1String = false;
+			for (const char c : text) {
+				if (inString) {
+					if (escape) {
+						escape = false;
+						current += c;
+					} else if (c == '\\') {
+						escape = true;
+					} else if (c == '"') {
+						inString = false;
+						if (depth == 1) {
+							lastDepth1String = current;
+							haveDepth1String = true;
+						}
+					} else {
+						current += c;
+					}
+					continue;
+				}
+				switch (c) {
+				case '"':
+					inString = true;
+					current.clear();
+					break;
+				case '{':
+				case '[':
+					++depth;
+					haveDepth1String = false;
+					break;
+				case '}':
+				case ']':
+					--depth;
+					haveDepth1String = false;
+					break;
+				case ':':
+					if (depth == 1 && haveDepth1String) {
+						std::size_t start = 0;
+						while (start <= lastDepth1String.size()) {
+							auto bar = lastDepth1String.find('|', start);
+							if (bar == std::string::npos) {
+								bar = lastDepth1String.size();
+							}
+							auto race = lastDepth1String.substr(start, bar - start);
+							if (!race.empty()) {
+								a_out.insert(LowerCopy(race));
+							}
+							start = bar + 1;
+						}
+					}
+					haveDepth1String = false;
+					break;
+				case ',':
+					haveDepth1String = false;
+					break;
+				default:
+					break;
+				}
+			}
+		}
+
+		void LoadDF()
+		{
+			auto* dh = RE::TESDataHandler::GetSingleton();
+			g_dfFile = dh ? dh->LookupModByName(Settings::dfPlugin) : nullptr;
+			g_dfRaces.clear();
+			if (!g_dfFile) {
+				logger::info("Dismembering Framework: {} not loaded, its rules off", Settings::dfPlugin);
+				return;
+			}
+
+			int missing = 0;
+			auto find = [&missing](const std::string& a_edid, RE::FormID a_id) {
+				auto* global = FindDFGlobal(a_edid, a_id);
+				if (!global) {
+					++missing;
+					logger::info("Dismembering Framework: setting {} not found (another DF version?), not checked", a_edid);
+				}
+				return global;
+			};
+			g_dfModStatus = find("DF_ModStatus_GV", kDFModStatusID);
+			for (int who = 0; who < kDFWhoCount; ++who) {
+				const std::string prefix = std::string("DF_Cond_Global_") + kDFWhoNames[who];
+				g_dfCanBe[who] = find(prefix + "_CanBeDismembered_GV", kDFCanBeIDs[who]);
+				g_dfCanDo[who] = find(prefix + "_CanDismember_GV", kDFCanDoIDs[who]);
+				g_dfIfFatal[who] = find(prefix + "_CanDismember_IfFatal_GV", kDFIfFatalIDs[who]);
+			}
+			for (int w = 0; w < kDFWeaponCount; ++w) {
+				g_dfWeapon[w] = find(std::string("DF_Cond_WeapType_") + kDFWeaponNames[w] + "_CanDismember_GV", kDFWeaponIDs[w]);
+			}
+
+			// the races DF has limbs for: Data\SKSE\DismemberingFramework\*_DATA.json (DF and its asset packs)
+			std::error_code ec;
+			const std::filesystem::path dir = "Data/SKSE/DismemberingFramework";
+			int files = 0;
+			for (std::filesystem::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+				const auto name = LowerCopy(it->path().filename().string());
+				if (name.size() > 10 && name.ends_with("_data.json")) {
+					ReadDFRaceKeys(it->path(), g_dfRaces);
+					++files;
+				}
+			}
+			logger::info("Dismembering Framework: {} found; {} race(s) with limbs in {} data file(s){}; deaths it may dismember: {}",
+				Settings::dfPlugin, g_dfRaces.size(), files, missing ? " (some settings not found)" : "",
+				Settings::dfYieldDeaths ? "the game's own death" : "left to Delirium ([Dismembering] bYieldDeaths=0)");
+			if (Settings::dfCheckRaces && g_dfRaces.empty()) {
+				logger::info("Dismembering Framework: no race data found, races are not checked");
+			}
+		}
+
+		DFWho DFWhoOf(RE::Actor* a_actor)
+		{
+			if (a_actor == RE::PlayerCharacter::GetSingleton()) {
+				return kDFPlayer;
+			}
+			return a_actor->HasKeywordString("ActorTypeNPC") ? kDFNPC : kDFOther;
+		}
+
+		// what the killer hits with, in DF's weapon classes (the right hand's weapon; creatures: Beast)
+		DFWeapon DFWeaponOf(RE::Actor* a_killer, DFWho a_who)
+		{
+			if (a_who == kDFOther) {
+				return kDFBeast;
+			}
+			auto* form = a_killer->GetEquippedObject(false);
+			auto* weap = form ? form->As<RE::TESObjectWEAP>() : nullptr;
+			if (!weap || weap->IsHandToHandMelee()) {
+				return kDFHandToHand;
+			}
+			if (weap->IsOneHandedDagger()) {
+				return kDFDagger;
+			}
+			if (weap->IsOneHandedSword()) {
+				return kDFOneHandSword;
+			}
+			if (weap->IsOneHandedAxe()) {
+				return kDFOneHandAxe;
+			}
+			if (weap->IsOneHandedMace()) {
+				return kDFOneHandMace;
+			}
+			if (weap->IsTwoHandedSword()) {
+				return kDFTwoHandSword;
+			}
+			if (weap->IsTwoHandedAxe()) {
+				return weap->HasKeywordString("WeapTypeWarhammer") ? kDFTwoHandMace : kDFTwoHandAxe;
+			}
+			if (weap->IsBow() || weap->IsCrossbow()) {
+				return kDFRanged;
+			}
+			return kDFOtherWeapon;
+		}
+
+		// Would Dismembering Framework try to dismember on this killing blow? It only does that when the hit
+		// really killed her; Delirium's "dying on her feet" keeps her alive, so DF would never get the chance.
+		// DF's own dice roll (fRegularAttackChance...) still decides whether a limb comes off.
+		bool DFMayDismember(RE::Actor* a_victim, RE::Actor* a_killer)
+		{
+			if (!g_dfFile || !a_victim || !a_killer || !DFOn(g_dfModStatus)) {
+				return false;
+			}
+			const auto victim = DFWhoOf(a_victim);
+			if (!DFOn(g_dfCanBe[victim])) {
+				return false;
+			}
+			const auto killer = DFWhoOf(a_killer);
+			if (!DFOn(g_dfCanDo[killer]) || !DFOn(g_dfIfFatal[killer])) {
+				return false;
+			}
+			if (!DFOn(g_dfWeapon[DFWeaponOf(a_killer, killer)])) {
+				return false;
+			}
+			if (Settings::dfCheckRaces && !g_dfRaces.empty()) {
+				auto* race = a_victim->GetRace();
+				const char* edid = race ? race->GetFormEditorID() : nullptr;
+				if (edid && *edid && !g_dfRaces.contains(LowerCopy(edid))) {
+					return false;  // DF has no limbs for her race
+				}
+			}
+			return true;
 		}
 
 		// Checks that read lists the game changes on the main thread (factions, active effects, graph variables).
@@ -327,6 +592,8 @@ namespace Rules
 			logger::info("Maximum Carnage: {} not loaded, Carnage rules off", Settings::carnagePlugin);
 		}
 
+		LoadDF();
+
 		{
 			std::scoped_lock lock(g_lock);
 			g_carnageBase.clear();
@@ -418,6 +685,11 @@ namespace Rules
 			// a corpse's ragdoll is the game's own: Delirium decides, except on a Carnage corpse
 			return (Settings::carnageReleaseCorpses && IsCarnageActor(a_actor)) ? kCarnageCorpseRagdoll : nullptr;
 		}
+		if (DeathCheck::HeldDeath(a_actor)) {
+			// Delirium took her killing blow and is collapsing her: that ragdoll is Delirium's own death.
+			// Refusing it left NPCs alive at 1 health in Skyrim's ragdoll for minutes.
+			return nullptr;
+		}
 		if (Settings::ragdollVanillaOnly && a_actor) {
 			const auto now = Now();
 			std::scoped_lock lock(g_lock);
@@ -431,11 +703,17 @@ namespace Rules
 
 	const char* DeathReason(RE::Actor* a_victim, RE::Actor* a_killer)
 	{
+		if (DeathCheck::Finishing(a_victim)) {
+			return kFinishing;  // our own kill of an NPC Delirium left dying: it must not hold her again
+		}
 		if (auto* reason = CommonReason(a_victim, a_killer)) {
 			return reason;
 		}
 		if (Settings::carnageYieldDeaths && IsCarnageActor(a_victim)) {
 			return kCarnageDeath;
+		}
+		if (Settings::dfYieldDeaths && DFMayDismember(a_victim, a_killer)) {
+			return kDismember;
 		}
 		if (Settings::yieldPlayerKills && a_killer && a_killer == RE::PlayerCharacter::GetSingleton()) {
 			return kPlayerKill;

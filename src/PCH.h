@@ -9,7 +9,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <format>
+#include <iterator>
 #include <fstream>
 #include <functional>
 #include <limits>

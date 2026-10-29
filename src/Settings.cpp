@@ -160,6 +160,10 @@ namespace Settings
 		Get(ini, "carnage.breleasecorpses", carnageReleaseCorpses);
 		Get(ini, "carnage.byieldall", carnageYieldAll);
 
+		Get(ini, "dismembering.splugin", dfPlugin);
+		Get(ini, "dismembering.byielddeaths", dfYieldDeaths);
+		Get(ini, "dismembering.bcheckraces", dfCheckRaces);
+
 		Get(ini, "ragdoll.bvanillaonly", ragdollVanillaOnly);
 		Get(ini, "ragdoll.fhitwindow", ragdollHitWindow, 0.05f, 10.0f);
 
@@ -176,6 +180,8 @@ namespace Settings
 		if (deathCheckSecond < deathCheckFirst) {
 			deathCheckSecond = deathCheckFirst;
 		}
+		Get(ini, "deathcheck.bfinishstuckdying", finishStuckDying);
+		Get(ini, "deathcheck.fstuckdyingseconds", stuckDyingSeconds, 4.0f, 60.0f);
 
 		Get(ini, "release.breleaseheld", releaseHeld);
 		Get(ini, "release.iwatchintervalms", watchIntervalMs, 10, 1000);
@@ -185,11 +191,12 @@ namespace Settings
 		logger::info("Settings: [KillMoves] bPlayerKillMoveWatch={} fPlayerStuckSeconds={} fPlayerControlsAfter={}", playerKillMoveWatch, playerKillMoveStuckSeconds, playerKillMoveControlsAfter);
 		logger::info("Settings: [PairedAnimations] bYield={}", pairedYield);
 		logger::info("Settings: [Carnage] sPlugin={} bYieldDeaths={} bReleaseCorpses={} bYieldAll={}", carnagePlugin, carnageYieldDeaths, carnageReleaseCorpses, carnageYieldAll);
+		logger::info("Settings: [Dismembering] sPlugin={} bYieldDeaths={} bCheckRaces={}", dfPlugin, dfYieldDeaths, dfCheckRaces);
 		logger::info("Settings: [Ragdoll] bVanillaOnly={} fHitWindow={}", ragdollVanillaOnly, ragdollHitWindow);
 		logger::info("Settings: [OtherMods] sFactions={}", Join(factions));
 		logger::info("Settings: [OtherMods] sKeywords={} sEffectKeywords={}", Join(keywords), Join(effectKeywords));
 		logger::info("Settings: [OtherMods] sEffectPlugins={} sSourcePlugins={} fSourceBlockSeconds={}", Join(effectPlugins), Join(sourcePlugins), sourceBlockSeconds);
-		logger::info("Settings: [DeathCheck] bEnabled={} fFirstCheck={} fSecondCheck={}", deathCheckEnabled, deathCheckFirst, deathCheckSecond);
+		logger::info("Settings: [DeathCheck] bEnabled={} fFirstCheck={} fSecondCheck={} bFinishStuckDying={} fStuckDyingSeconds={}", deathCheckEnabled, deathCheckFirst, deathCheckSecond, finishStuckDying, stuckDyingSeconds);
 		logger::info("Settings: [Release] bReleaseHeld={} iWatchIntervalMs={}", releaseHeld, watchIntervalMs);
 	}
 }

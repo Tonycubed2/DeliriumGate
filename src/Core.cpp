@@ -1,4 +1,5 @@
 #include "Core.h"
+#include "DeathCheck.h"
 #include "Rules.h"
 #include "Settings.h"
 
@@ -132,7 +133,11 @@ namespace Core
 					return false;  // the game's own death goes through: Carnage / the kill move get it
 				}
 			}
-			return g_onKill(a_engine, a_victim, a_killer, a_damage, a_b1, a_b2);
+			const bool held = g_onKill(a_engine, a_victim, a_killer, a_damage, a_b1, a_b2);
+			if (held) {
+				DeathCheck::NoteHeldDeath(a_victim, a_killer);  // watched: finished if Delirium leaves it hanging
+			}
+			return held;
 		}
 
 		void HookNoKillMoves(void* a_engine)

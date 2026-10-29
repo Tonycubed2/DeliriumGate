@@ -9,7 +9,8 @@ License: GPL-3.0-or-later (see `LICENSE`). Third-party notices: `THIRD_PARTY_NOT
 ```
 Targets: Skyrim AE 1.6.1170 and 1.7.99 (Address Library, version independent).
 Requires: SKSE, Address Library for SKSE Plugins, Skyrim Delirium 1.4.4 or 1.4.5 (Nexus 196333).
-Works with: Maximum Carnage (MaximumCarnage.esp), VioLens and vanilla kill moves, OStim NG.
+Works with: Maximum Carnage (MaximumCarnage.esp), Dismembering Framework, VioLens and vanilla
+kill moves, OStim NG.
 
 Built against CommonLibSSE-NG 6.7.0 at C:\dllmaker\CommonLibSSE-NG
 (taken from the CommonLibSSEPath_NG environment variable when it is set). Uses MinHook (vcpkg).
@@ -26,6 +27,12 @@ bumps, explosions, Skyrim's own ragdolls) and steps aside when something else ha
   Maximum Carnage NPCs that carry a Carnage gore spell die the vanilla way: Delirium does not hold
                   them at 1 health ("dying on her feet"), so Carnage gets the death and does its
                   gore. One that dies while Delirium is driving her is handed back at once.
+  Dismembering    A killing blow Dismembering Framework may dismember (by its own MCM settings:
+  Framework       who, "if fatal", the killer's weapon type, races it has limbs for) is the
+                  game's own death, so DF can cut. DF's dice roll still decides each time.
+  Stuck dying     An NPC Delirium keeps "dying on her feet" for more than 8 s (its own limit is
+                  3 s) gets her death finished: Delirium is made to let her go, and if she is
+                  still alive DeliriumGate kills her, credited to the same killer.
   Other mods      OStim scene actors (OStim.esp faction 0xD93) by default, plus any factions,
                   keywords, magic effects or hit-source plugins listed in DeliriumGate.ini.
   Ragdolls        Delirium takes over Skyrim's ragdoll only when a real hit put the NPC there.
@@ -67,6 +74,16 @@ Install (its own MO2 mod, any priority):
   SKSE\Plugins\DeliriumGate.dll
   SKSE\Plugins\DeliriumGate.pdb
   SKSE\Plugins\DeliriumGate.ini
+
+1.0.8: [Dismembering] (on when Dismembering Framework.esm is loaded): a killing blow DF may
+  dismember is the game's own death. Delirium's "dying on her feet" kept NPCs alive at 1 health,
+  and DF only dismembers on a hit that really kills, so it never got to cut.
+  [DeathCheck] bFinishStuckDying (on): Delirium sometimes never finished a death it took; the NPC
+  stayed alive, not fighting, in a broken pose (T-pose) until the next loading screen (seen in logs
+  for 2 and 9 minutes). 8 s after the killing blow her death is finished (Delirium's release first,
+  then the game's own death). Logged as "Stuck dying: ...".
+  An NPC whose killing blow Delirium took may now go into Delirium's collapse ragdoll even with no
+  fresh hit: the "vanilla hit" ragdoll rule refused that and left her alive in Skyrim's ragdoll.
 
 1.0.7: Skyrim Delirium 1.4.5 is a known build (addresses from its PDB), so handing NPCs back stays on.
   1.4.5 has the same hooked functions and the same engine layout as 1.4.4; only the addresses moved.

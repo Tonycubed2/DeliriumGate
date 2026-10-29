@@ -23,7 +23,7 @@ namespace Watch
 				Core::Install("reload check");
 			}
 
-			if (Settings::enabled && Settings::deathCheckEnabled) {
+			if (Settings::enabled && (Settings::deathCheckEnabled || Settings::finishStuckDying)) {
 				DeathCheck::Tick();
 			}
 			if (Settings::enabled && Settings::playerKillMoveWatch) {

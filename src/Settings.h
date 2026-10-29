@@ -26,6 +26,11 @@ namespace Settings
 	inline bool        carnageReleaseCorpses = true;  // a Carnage NPC that dies while Delirium has her is handed back at once
 	inline bool        carnageYieldAll = false;       // Carnage NPCs never get Delirium at all (not even hit reactions)
 
+	// [Dismembering] Dismembering Framework (DismemberingFramework.dll + its .esm)
+	inline std::string dfPlugin = "Dismembering Framework.esm";
+	inline bool        dfYieldDeaths = true;  // a killing blow DF may dismember is the game's own death (DF needs her really dead)
+	inline bool        dfCheckRaces = true;   // only races DF has limbs for (Data\SKSE\DismemberingFramework\*_DATA.json)
+
 	// [Ragdoll]
 	inline bool  ragdollVanillaOnly = true;  // take over Skyrim's ragdoll only right after a real hit (shout, explosion, blow...)
 	inline float ragdollHitWindow = 1.0f;    // seconds after that hit
@@ -42,6 +47,9 @@ namespace Settings
 	inline bool  deathCheckEnabled = true;  // a dead NPC still not in ragdoll after these times gets RagdollInstant
 	inline float deathCheckFirst = 3.0f;    // seconds after death
 	inline float deathCheckSecond = 8.0f;   // and once more
+
+	inline bool  finishStuckDying = true;   // Delirium kept an NPC "dying on her feet" too long: finish her death
+	inline float stuckDyingSeconds = 8.0f;  // seconds after the killing blow (Delirium's own limit is 3 s)
 
 	// [Release]
 	inline bool          releaseHeld = true;   // an NPC Delirium already has is handed back when another mod takes her

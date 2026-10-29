@@ -1,4 +1,4 @@
-// DeliriumGate 1.0.7
+// DeliriumGate 1.0.8
 // Built against CommonLibSSE-NG 6.7.0 for Skyrim AE 1.6.1170 and 1.7.99.
 //
 // Puts Skyrim Delirium (Nexus 196333) last in line. Delirium only plays its vanilla reactions
@@ -24,7 +24,7 @@
 #include "Watch.h"
 
 SKSEPluginInfo(
-	.Version = REL::Version{ 1, 0, 7, 0 },
+	.Version = REL::Version{ 1, 0, 8, 0 },
 	.Name = "DeliriumGate"sv,
 	.Author = "tonycubed2"sv,
 	.StructCompatibility = SKSE::StructCompatibility::Independent,
@@ -78,7 +78,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	SKSE::Init(a_skse);
 	Rules::SetMainThread();
 
-	logger::info("DeliriumGate 1.0.7 loading; game runtime {}", REL::Module::get().version().string());
+	logger::info("DeliriumGate 1.0.8 loading; game runtime {}", REL::Module::get().version().string());
 
 	Settings::Load();
 	if (!Settings::enabled) {
