@@ -10,7 +10,7 @@ License: GPL-3.0-or-later (see `LICENSE`). Third-party notices: `THIRD_PARTY_NOT
 Targets: Skyrim AE 1.6.1170 and 1.7.99 (Address Library, version independent).
 Requires: SKSE, Address Library for SKSE Plugins, Skyrim Delirium 1.4.4 or 1.4.5 (Nexus 196333).
 Works with: Maximum Carnage (MaximumCarnage.esp), Dismembering Framework, Frozen Electrocuted
-Combustion (FEC.esp), VioLens and vanilla kill moves, OStim NG.
+Combustion (FEC.esp), VioLens and vanilla kill moves, OStim Standalone.
 
 Built against CommonLibSSE-NG 6.7.0 at C:\dllmaker\CommonLibSSE-NG
 (taken from the CommonLibSSEPath_NG environment variable when it is set). Uses MinHook (vcpkg).
@@ -78,6 +78,12 @@ Install (its own MO2 mod, any priority):
   SKSE\Plugins\DeliriumGate.dll
   SKSE\Plugins\DeliriumGate.pdb
   SKSE\Plugins\DeliriumGate.ini
+
+1.0.10: crash fix for the stuck-dying finish (1.0.8). Killing an NPC makes the game finish or cancel
+  what her spell casters hold; a Thief whose caster held a broken spell crashed the game in
+  MagicItem::GetCostActorValue. Now a stuck NPC who is casting has her cast interrupted first and is
+  killed on a later tick; one whose caster holds a broken spell, or who is being unloaded or deleted,
+  is not killed (she dies at the next loading screen, as without DeliriumGate). Logged.
 
 1.0.9: [FEC] (on when FEC.esp is loaded): Frozen Electrocuted Combustion reads the cause of death
   from the victim's magic effects when she dies; Delirium's "dying on her feet" delayed the death
