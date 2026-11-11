@@ -1,5 +1,6 @@
 #include "Rules.h"
 #include "DeathCheck.h"
+#include "GameCalls.h"
 #include "Settings.h"
 
 namespace Rules
@@ -559,7 +560,7 @@ namespace Rules
 				}
 			}
 			for (auto* faction : g_factions) {
-				if (a_actor->IsInFaction(faction)) {
+				if (GameCalls::IsInFaction(a_actor, faction)) {
 					return kFaction;
 				}
 			}

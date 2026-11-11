@@ -7,12 +7,12 @@ Maximum Carnage deaths. Delirium itself is not modified, and none of its files a
 License: GPL-3.0-or-later (see `LICENSE`). Third-party notices: `THIRD_PARTY_NOTICES.txt`.
 
 ```
-Targets: Skyrim AE 1.6.1170 and 1.7.99 (Address Library, version independent).
+Targets: Skyrim SE 1.5.97, AE 1.6.1170, 1.7.99 and 1.7.104 (Address Library, version independent).
 Requires: SKSE, Address Library for SKSE Plugins, Skyrim Delirium 1.4.4 or 1.4.5 (Nexus 196333).
 Works with: Maximum Carnage (MaximumCarnage.esp), Dismembering Framework, Frozen Electrocuted
 Combustion (FEC.esp), VioLens and vanilla kill moves, OStim Standalone.
 
-Built against CommonLibSSE-NG 6.7.0 at C:\dllmaker\CommonLibSSE-NG
+Built against CommonLibSSE-NG 16.2.0 at C:\dllmaker\CommonLibSSE-NG
 (taken from the CommonLibSSEPath_NG environment variable when it is set). Uses MinHook (vcpkg).
 
 What it does
@@ -37,6 +37,8 @@ bumps, explosions, Skyrim's own ragdolls) and steps aside when something else ha
   Stuck dying     An NPC Delirium keeps "dying on her feet" for more than 8 s (its own limit is
                   3 s) gets her death finished: Delirium is made to let her go, and if she is
                   still alive DeliriumGate kills her, credited to the same killer.
+  Diagnostics     [TwitchWatch]: a corpse near you that never stops moving is logged with
+                  everything that can hold or drive its ragdoll; first-person switch blocks too.
   Other mods      OStim scene actors (OStim.esp faction 0xD93) by default, plus any factions,
                   keywords, magic effects or hit-source plugins listed in DeliriumGate.ini.
   Ragdolls        Delirium takes over Skyrim's ragdoll only when a real hit put the NPC there.
@@ -78,6 +80,19 @@ Install (its own MO2 mod, any priority):
   SKSE\Plugins\DeliriumGate.dll
   SKSE\Plugins\DeliriumGate.pdb
   SKSE\Plugins\DeliriumGate.ini
+
+1.0.11: crash fix for the stuck-dying finish (1.0.8 to 1.0.10), on SE and AE. CommonLibSSE-NG 6.7.0
+  (the library DeliriumGate is built with) declares one virtual function too many in TESObjectREFR,
+  so DeliriumGate's "kill her" called the slot after KillImpl: Actor::DrinkPotion, with the killer
+  as the "potion". That is the crash in MagicItem::GetCostActorValue (1.0.10's "broken spell" was
+  a wrong reading) and the new one in MagicCaster::DirectlyApplySpell. Checked against the Character
+  vtable of SkyrimSE.exe 1.5.97 and 1.6.1170. KillImpl, IsInFaction and IsDead are now called by
+  their Address Library IDs, and DeliriumGate is now built with CommonLibSSE-NG 16.2.0 (fixed there
+  since 6.7.1). The 1.0.10 cast-interrupt / broken-spell checks are removed.
+  [OtherMods] sFactions (OStim's scene faction) had the same fault: "is she in this faction" ran
+  Actor::ForEachPerk with the faction as the visitor, which ran the faction's destructor and gave a
+  random answer. Fixed the same way.
+  [TwitchWatch] diagnostics only: endless-twitching corpses and first-person switch blocks are logged.
 
 1.0.10: crash fix for the stuck-dying finish (1.0.8). Killing an NPC makes the game finish or cancel
   what her spell casters hold; a Thief whose caster held a broken spell crashed the game in

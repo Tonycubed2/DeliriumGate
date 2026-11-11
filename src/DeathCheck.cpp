@@ -1,5 +1,6 @@
 #include "DeathCheck.h"
 #include "Core.h"
+#include "GameCalls.h"
 #include "Settings.h"
 
 namespace DeathCheck
@@ -28,7 +29,6 @@ namespace DeathCheck
 			Clock::time_point took;
 			Clock::time_point due;
 			int               stage;  // 0 = ask Delirium to let her go, 1 = kill her ourselves
-			int               interrupts = 0;  // times her casting was stopped before the kill
 		};
 
 		std::vector<Held>       g_held;            // under g_lock
@@ -90,43 +90,6 @@ namespace DeathCheck
 			return a_entry.stage == 1;  // look once more later
 		}
 
-		// The spell a caster holds is a real, loaded form (read only; a broken pointer is caught).
-		bool SpellValid(RE::MagicItem* a_spell)
-		{
-			__try {
-				const auto id = a_spell->GetFormID();
-				return id != 0 && RE::TESForm::LookupByID(id) == a_spell;
-			} __except (1 /* EXCEPTION_EXECUTE_HANDLER */) {
-				return false;
-			}
-		}
-
-		enum class CasterState
-		{
-			kIdle,     // nothing being cast
-			kCasting,  // a spell is being cast or held
-			kBroken    // a caster holds a spell that is not a valid form (killing her would crash in MagicCaster::Fire)
-		};
-
-		// Killing an NPC makes the game finish or cancel what her magic casters hold (MagicCaster::Fire).
-		// 1.0.8 killed a Thief whose caster held a broken spell pointer: crash in MagicItem::GetCostActorValue.
-		CasterState CheckCasters(RE::Actor* a_actor)
-		{
-			using Source = RE::MagicSystem::CastingSource;
-			bool casting = false;
-			for (const auto source : { Source::kLeftHand, Source::kRightHand, Source::kOther, Source::kInstant }) {
-				auto* caster = a_actor->GetMagicCaster(source);
-				if (!caster || !caster->currentSpell) {
-					continue;
-				}
-				if (!SpellValid(caster->currentSpell)) {
-					return CasterState::kBroken;
-				}
-				casting = true;
-			}
-			return casting ? CasterState::kCasting : CasterState::kIdle;
-		}
-
 		// One death Delirium took: is it finished? If not, finish it. Returns true when it must be looked at again.
 		bool CheckHeld(Held& a_entry, Clock::time_point a_now)
 		{
@@ -168,38 +131,18 @@ namespace DeathCheck
 				}
 			}
 
-			// Delirium is not finishing it: the game's own death, credited to the same killer. Only on an
-			// NPC the game is fully running (not being deleted, AI in high process), with sane spell casters.
+			// Delirium is not finishing it: the game's own death (Actor::KillImpl), credited to the same
+			// killer. Only on an NPC the game is fully running (not being deleted, AI in high process).
 			auto* process = actor->GetActorRuntimeData().currentProcess;
 			if (actor->IsDeleted() || actor->IsMarkedForDeletion() || !process || !process->InHighProcess()) {
 				logger::info("Stuck dying: {:08X} {} still alive {:.1f} s after Delirium took her killing blow, but she is being unloaded or deleted: left to the game",
 					a_entry.victim, name ? name : "", age);
 				return false;
 			}
-			switch (CheckCasters(actor)) {
-			case CasterState::kBroken:
-				logger::warn("Stuck dying: {:08X} {} still alive {:.1f} s after Delirium took her killing blow, but one of her spell casters holds a broken spell: "
-							 "not killed (that crashes the game); she dies at the next loading screen",
-					a_entry.victim, name ? name : "", age);
-				return false;
-			case CasterState::kCasting:
-				if (a_entry.interrupts < 3) {
-					++a_entry.interrupts;
-					actor->InterruptCast(false);  // stop the cast first, kill on a later tick once the casters are idle
-					logger::info("Stuck dying: {:08X} {} still casting: cast interrupted before her death is finished", a_entry.victim, name ? name : "");
-					a_entry.due = a_now + After(0.5f);
-					return true;
-				}
-				logger::warn("Stuck dying: {:08X} {} keeps casting after 3 interrupts: not killed; she dies at the next loading screen",
-					a_entry.victim, name ? name : "");
-				return false;
-			case CasterState::kIdle:
-				break;
-			}
 
 			auto* killer = a_entry.killer ? RE::TESForm::LookupByID<RE::Actor>(a_entry.killer) : nullptr;
 			g_finishing.store(a_entry.victim);
-			actor->KillImpl(killer, 0.0f, true, true);
+			GameCalls::KillImpl(actor, killer, 0.0f, true, true);  // by ID: CommonLib 6.7.0's virtual KillImpl calls DrinkPotion
 			g_finishing.store(0);
 			const bool dead = ReallyDead(actor);
 			logger::info("Stuck dying: {:08X} {} still alive {:.1f} s after Delirium took her killing blow: killed by DeliriumGate (killer {:08X}){}",

@@ -4,6 +4,7 @@
 #include "KillMoveWatch.h"
 #include "Rules.h"
 #include "Settings.h"
+#include "TwitchWatch.h"
 
 namespace Watch
 {
@@ -28,6 +29,9 @@ namespace Watch
 			}
 			if (Settings::enabled && Settings::playerKillMoveWatch) {
 				KillMoveWatch::Tick();
+			}
+			if (Settings::enabled && Settings::twitchWatch) {
+				TwitchWatch::Tick();
 			}
 
 			if (!Settings::enabled || !Settings::releaseHeld || !Core::CanRelease()) {

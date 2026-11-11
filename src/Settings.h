@@ -17,6 +17,9 @@ namespace Settings
 	inline float playerKillMoveStuckSeconds = 10.0f;  // kill move flag still on after this long: cleared
 	inline float playerKillMoveControlsAfter = 2.0f;  // controls still off this long after it ended: switched on
 
+	// [TwitchWatch] diagnostics only: corpses that never stop moving, and why first person is blocked
+	inline bool twitchWatch = true;
+
 	// [PairedAnimations]
 	inline bool pairedYield = true;  // NPC in a synced/paired animation (bIsSynced): Delirium stays out
 

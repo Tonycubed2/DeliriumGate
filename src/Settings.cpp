@@ -153,6 +153,8 @@ namespace Settings
 		Get(ini, "killmoves.fplayerstuckseconds", playerKillMoveStuckSeconds, 3.0f, 120.0f);
 		Get(ini, "killmoves.fplayercontrolsafter", playerKillMoveControlsAfter, 0.5f, 30.0f);
 
+		Get(ini, "twitchwatch.benabled", twitchWatch);
+
 		Get(ini, "pairedanimations.byield", pairedYield);
 
 		Get(ini, "carnage.splugin", carnagePlugin);
@@ -193,6 +195,7 @@ namespace Settings
 		logger::info("Settings: bEnabled={} bLogYields={} fLogRepeatSeconds={}", enabled, logYields, logRepeatSeconds);
 		logger::info("Settings: [KillMoves] bYield={} bProtectKillMoves={} bRestoreKillMoveGlobal={} bYieldPlayerKills={}", killMovesYield, protectKillMoves, restoreKillMoveGlobal, yieldPlayerKills);
 		logger::info("Settings: [KillMoves] bPlayerKillMoveWatch={} fPlayerStuckSeconds={} fPlayerControlsAfter={}", playerKillMoveWatch, playerKillMoveStuckSeconds, playerKillMoveControlsAfter);
+		logger::info("Settings: [TwitchWatch] bEnabled={}", twitchWatch);
 		logger::info("Settings: [PairedAnimations] bYield={}", pairedYield);
 		logger::info("Settings: [Carnage] sPlugin={} bYieldDeaths={} bReleaseCorpses={} bYieldAll={}", carnagePlugin, carnageYieldDeaths, carnageReleaseCorpses, carnageYieldAll);
 		logger::info("Settings: [Dismembering] sPlugin={} bYieldDeaths={} bCheckRaces={}", dfPlugin, dfYieldDeaths, dfCheckRaces);

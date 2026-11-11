@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(DeliriumGate VERSION 1.0.10 LANGUAGES CXX)
+project(DeliriumGate VERSION 1.0.11 LANGUAGES CXX)
 
 if("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
 	message(FATAL_ERROR "in-source builds are not allowed")
 endif()
 
-# CommonLibSSE-NG 6.7.0 source tree (supports 1.6.1170 and 1.7.99)
+# CommonLibSSE-NG 16.2.0 source tree (supports 1.5.97, 1.6.1170, 1.7.99 and 1.7.104)
 if(DEFINED ENV{CommonLibSSEPath_NG} AND IS_DIRECTORY "$ENV{CommonLibSSEPath_NG}")
 	set(COMMONLIB_DIR "$ENV{CommonLibSSEPath_NG}")
 else()
@@ -33,13 +33,16 @@ add_library(${PROJECT_NAME} SHARED
 	src/Watch.cpp
 	src/DeathCheck.cpp
 	src/KillMoveWatch.cpp
+	src/TwitchWatch.cpp
 	src/PCH.h
+	src/GameCalls.h
 	src/Settings.h
 	src/Rules.h
 	src/Core.h
 	src/Watch.h
 	src/DeathCheck.h
 	src/KillMoveWatch.h
+	src/TwitchWatch.h
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
